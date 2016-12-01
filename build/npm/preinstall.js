@@ -26,7 +26,7 @@ if (process.platform !== 'win32') {
 	delete env['npm_config_target'];
 	delete env['npm_config_runtime'];
 
-	cp.spawnSync('npm', ['install'], {
+	cp.spawnSync('cnpm', ['install'], {
 		cwd: path.join(path.dirname(__dirname), 'lib', 'watch'),
 		stdio: 'inherit',
 		env

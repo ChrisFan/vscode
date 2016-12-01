@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 const cp = require('child_process');
-const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const npm = process.platform === 'win32' ? 'cnpm.cmd' : 'tnpm';
 
 function npmInstall(location) {
 	const result = cp.spawnSync(npm, ['install'], {
