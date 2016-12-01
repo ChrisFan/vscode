@@ -17,6 +17,18 @@ start electron
 ./scripts/code.sh
 ```
 
+## monaco
+
+setup monaco
+```bash
+npm run monaco-editor-setup
+```
+
+build monaco
+```bash
+gulp editor-distro
+```
+
 ## changelogs
 
 - add monaco.languages.registerTokensProvider

@@ -1,4 +1,4 @@
-> This is a fork, it will publish to npm as `chrisfan/monaco-editor-core`
+> This is a fork, it will publish to npm as `cf-monaco-editor-core`
 
 # Steps to publish a new version of monaco-editor-core
 
