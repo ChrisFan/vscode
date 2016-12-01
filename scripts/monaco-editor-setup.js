@@ -14,7 +14,7 @@ var ROOT_NODE_MODULES_PATH = path.join(ROOT, 'node_modules');
 var EDITOR_ROOT = path.join(ROOT, 'build/monaco')
 var EDITOR_NODE_MODULES_PATH = path.join(EDITOR_ROOT, 'node_modules')
 
-var cmd = `npm install`;
+var cmd = `npm install --registry=https://registry.npm.taobao.org`;
 cp.execSync(cmd, {
 	cwd: EDITOR_ROOT,
 	stdio:[0,1,2]

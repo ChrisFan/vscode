@@ -1,3 +1,5 @@
+> This is a fork, it will publish to npm as `chrisfan/monaco-editor-core`
+
 # Steps to publish a new version of monaco-editor-core
 
 ## Generate monaco.d.ts
