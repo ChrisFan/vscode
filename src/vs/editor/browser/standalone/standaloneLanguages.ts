@@ -73,6 +73,14 @@ export function setTokensProvider(languageId: string, provider: modes.TokensProv
 }
 
 /**
+ * Set the tokens provider for a language without wrap an adapter
+ * @added 青栀
+ */
+export function registerTokensProvider(languageId: string, provider: any): IDisposable {
+	return modes.TokenizationRegistry.register(languageId, provider);
+}
+
+/**
  * Set the tokens provider for a language (monarch implementation).
  */
 export function setMonarchTokensProvider(languageId: string, languageDef: IMonarchLanguage): IDisposable {
@@ -493,6 +501,7 @@ export function createMonacoLanguagesAPI(): typeof monaco.languages {
 		// provider methods
 		setLanguageConfiguration: setLanguageConfiguration,
 		setTokensProvider: setTokensProvider,
+		registerTokensProvider: registerTokensProvider,
 		setMonarchTokensProvider: setMonarchTokensProvider,
 		registerReferenceProvider: registerReferenceProvider,
 		registerRenameProvider: registerRenameProvider,

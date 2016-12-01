@@ -3858,6 +3858,12 @@ declare module monaco.languages {
     export function setTokensProvider(languageId: string, provider: TokensProvider): IDisposable;
 
     /**
+     * Set the tokens provider for a language without wrap an adapter
+     * @added 青栀
+     */
+    export function registerTokensProvider(languageId: string, provider: any): IDisposable;
+
+    /**
      * Set the tokens provider for a language (monarch implementation).
      */
     export function setMonarchTokensProvider(languageId: string, languageDef: IMonarchLanguage): IDisposable;
