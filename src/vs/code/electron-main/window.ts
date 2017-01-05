@@ -15,7 +15,7 @@ import { IEnvironmentService, ParsedArgs } from 'vs/platform/environment/common/
 import { ILogService } from 'vs/code/electron-main/log';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
 import { parseArgs } from 'vs/platform/environment/node/argv';
-import product from 'vs/platform/product';
+import product from 'vs/platform/node/product';
 import { getCommonHTTPHeaders } from 'vs/platform/environment/node/http';
 import { IWindowSettings } from 'vs/platform/windows/common/windows';
 
@@ -30,6 +30,7 @@ export interface IWindowState {
 export interface IWindowCreationOptions {
 	state: IWindowState;
 	extensionDevelopmentPath?: string;
+	isExtensionTestHost?: boolean;
 	allowFullscreen?: boolean;
 	titleBarStyle?: 'native' | 'custom';
 }
@@ -88,6 +89,8 @@ export interface IWindowConfiguration extends ParsedArgs {
 	filesToOpen?: IPath[];
 	filesToCreate?: IPath[];
 	filesToDiff?: IPath[];
+
+	nodeCachedDataDir: string;
 }
 
 export enum ReadyState {
@@ -137,6 +140,7 @@ export class VSCodeWindow implements IVSCodeWindow {
 	private _lastFocusTime: number;
 	private _readyState: ReadyState;
 	private _extensionDevelopmentPath: string;
+	private _isExtensionTestHost: boolean;
 	private windowState: IWindowState;
 	private currentWindowMode: WindowMode;
 
@@ -156,6 +160,7 @@ export class VSCodeWindow implements IVSCodeWindow {
 		this._lastFocusTime = -1;
 		this._readyState = ReadyState.NONE;
 		this._extensionDevelopmentPath = config.extensionDevelopmentPath;
+		this._isExtensionTestHost = config.isExtensionTestHost;
 		this.whenReadyCallbacks = [];
 
 		// Load window state
@@ -200,21 +205,6 @@ export class VSCodeWindow implements IVSCodeWindow {
 		this._win = new BrowserWindow(options);
 		this._id = this._win.id;
 
-		// TODO@joao: hook this up to some initialization routine
-		// this causes a race between setting the headers and doing
-		// a request that needs them. chances are low
-		getCommonHTTPHeaders().done(headers => {
-			if (!this._win) {
-				return;
-			}
-
-			const urls = ['https://marketplace.visualstudio.com/*', 'https://*.vsassets.io/*'];
-
-			this._win.webContents.session.webRequest.onBeforeSendHeaders({ urls }, (details, cb) => {
-				cb({ cancel: false, requestHeaders: objects.assign(details.requestHeaders, headers) });
-			});
-		});
-
 		if (isFullscreenOrMaximized) {
 			this.win.maximize();
 
@@ -233,15 +223,38 @@ export class VSCodeWindow implements IVSCodeWindow {
 			this.setMenuBarVisibility(false); // respect configured menu bar visibility
 		}
 
+		// TODO@joao: hook this up to some initialization routine
+		// this causes a race between setting the headers and doing
+		// a request that needs them. chances are low
+		this.setCommonHTTPHeaders();
+
 		this.registerListeners();
+	}
+
+	private setCommonHTTPHeaders(): void {
+		getCommonHTTPHeaders().done(headers => {
+			if (!this._win) {
+				return;
+			}
+
+			const urls = ['https://marketplace.visualstudio.com/*', 'https://*.vsassets.io/*'];
+
+			this._win.webContents.session.webRequest.onBeforeSendHeaders({ urls }, (details, cb) => {
+				cb({ cancel: false, requestHeaders: objects.assign(details.requestHeaders, headers) });
+			});
+		});
 	}
 
 	public hasHiddenTitleBarStyle(): boolean {
 		return this.hiddenTitleBarStyle;
 	}
 
-	public get isPluginDevelopmentHost(): boolean {
+	public get isExtensionDevelopmentHost(): boolean {
 		return !!this._extensionDevelopmentPath;
+	}
+
+	public get isExtensionTestHost(): boolean {
+		return this._isExtensionTestHost;
 	}
 
 	public get extensionDevelopmentPath(): string {
@@ -441,8 +454,8 @@ export class VSCodeWindow implements IVSCodeWindow {
 		delete configuration.filesToDiff;
 
 		// Some configuration things get inherited if the window is being reloaded and we are
-		// in plugin development mode. These options are all development related.
-		if (this.isPluginDevelopmentHost && cli) {
+		// in extension development mode. These options are all development related.
+		if (this.isExtensionDevelopmentHost && cli) {
 			configuration.verbose = cli.verbose;
 			configuration.debugPluginHost = cli.debugPluginHost;
 			configuration.debugBrkPluginHost = cli.debugBrkPluginHost;
@@ -469,7 +482,7 @@ export class VSCodeWindow implements IVSCodeWindow {
 		windowConfiguration.fullscreen = this._win.isFullScreen();
 
 		// Set Accessibility Config
-		windowConfiguration.highContrast = platform.isWindows && systemPreferences.isInvertedColorScheme();
+		windowConfiguration.highContrast = platform.isWindows && systemPreferences.isInvertedColorScheme() && (!windowConfig || windowConfig.autoDetectHighContrast);
 		windowConfiguration.accessibilitySupport = app.isAccessibilitySupportEnabled();
 
 		// Perf Counters

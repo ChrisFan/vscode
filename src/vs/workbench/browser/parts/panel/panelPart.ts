@@ -11,7 +11,7 @@ import { Action, IAction } from 'vs/base/common/actions';
 import Event from 'vs/base/common/event';
 import { Builder } from 'vs/base/browser/builder';
 import { Registry } from 'vs/platform/platform';
-import { ActivityAction } from 'vs/workbench/browser/parts/activitybar/activityAction';
+import { ActivityAction } from 'vs/workbench/browser/parts/activitybar/activitybarActions';
 import { Scope } from 'vs/workbench/browser/actionBarRegistry';
 import { SyncActionDescriptor } from 'vs/platform/actions/common/actions';
 import { IWorkbenchActionRegistry, Extensions as WorkbenchExtensions } from 'vs/workbench/common/actionRegistry';
@@ -201,7 +201,7 @@ class ToggleMaximizedPanelAction extends Action {
 	}
 }
 
-let actionRegistry = <IWorkbenchActionRegistry>Registry.as(WorkbenchExtensions.WorkbenchActions);
+const actionRegistry = Registry.as<IWorkbenchActionRegistry>(WorkbenchExtensions.WorkbenchActions);
 actionRegistry.registerWorkbenchAction(new SyncActionDescriptor(TogglePanelAction, TogglePanelAction.ID, TogglePanelAction.LABEL, { primary: KeyMod.CtrlCmd | KeyCode.KEY_J }), 'View: Toggle Panel Visibility', nls.localize('view', "View"));
 actionRegistry.registerWorkbenchAction(new SyncActionDescriptor(FocusPanelAction, FocusPanelAction.ID, FocusPanelAction.LABEL), 'View: Focus into Panel', nls.localize('view', "View"));
 actionRegistry.registerWorkbenchAction(new SyncActionDescriptor(ToggleMaximizedPanelAction, ToggleMaximizedPanelAction.ID, ToggleMaximizedPanelAction.LABEL), 'View: Toggle Maximized Panel', nls.localize('view', "View"));

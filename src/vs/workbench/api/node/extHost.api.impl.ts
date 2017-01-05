@@ -10,8 +10,8 @@ import { score } from 'vs/editor/common/modes/languageSelector';
 import * as Platform from 'vs/base/common/platform';
 import { IThreadService } from 'vs/workbench/services/thread/common/threadService';
 import * as errors from 'vs/base/common/errors';
-import product from 'vs/platform/product';
-import pkg from 'vs/platform/package';
+import product from 'vs/platform/node/product';
+import pkg from 'vs/platform/node/package';
 import { ExtHostFileSystemEventService } from 'vs/workbench/api/node/extHostFileSystemEventService';
 import { ExtHostDocuments } from 'vs/workbench/api/node/extHostDocuments';
 import { ExtHostDocumentSaveParticipant } from 'vs/workbench/api/node/extHostDocumentSaveParticipant';
@@ -41,7 +41,7 @@ import { IWorkspaceContextService } from 'vs/platform/workspace/common/workspace
 import { CancellationTokenSource } from 'vs/base/common/cancellation';
 import * as vscode from 'vscode';
 import * as paths from 'vs/base/common/paths';
-import { realpathSync } from 'fs';
+import { realpath } from 'fs';
 import { MainContext, ExtHostContext, InstanceCollection, IInitData } from './extHost.protocol';
 import * as languageConfiguration from 'vs/editor/common/modes/languageConfiguration';
 
@@ -85,7 +85,7 @@ export function createApiFactory(initData: IInitData, threadService: IThreadServ
 	const extHostMessageService = new ExtHostMessageService(threadService);
 	const extHostStatusBar = new ExtHostStatusBar(threadService);
 	const extHostOutputService = new ExtHostOutputService(threadService);
-	const workspacePath = contextService.getWorkspace() ? contextService.getWorkspace().resource.fsPath : undefined;
+	const workspacePath = contextService.hasWorkspace() ? contextService.getWorkspace().resource.fsPath : undefined;
 	const extHostWorkspace = new ExtHostWorkspace(threadService, workspacePath);
 	const extHostLanguages = new ExtHostLanguages(threadService);
 
@@ -96,7 +96,7 @@ export function createApiFactory(initData: IInitData, threadService: IThreadServ
 
 		if (extension.enableProposedApi) {
 
-			if (initData.environment.isBuilt && !initData.environment.extensionDevelopmentPath) {
+			if (!initData.environment.enableProposedApi) {
 				extension.enableProposedApi = false;
 				console.warn('PROPOSED API is only available when developing an extension');
 
@@ -436,21 +436,38 @@ class Extension<T> implements vscode.Extension<T> {
 	}
 }
 
-export function defineAPI(factory: IExtensionApiFactory, extensionService: ExtHostExtensionService): void {
+export function initializeExtensionApi(extensionService: ExtHostExtensionService, apiFactory: IExtensionApiFactory): TPromise<void> {
+	return createExtensionPathIndex(extensionService).then(trie => defineAPI(apiFactory, trie));
+}
 
-	// each extension is meant to get its own api implementation
-	const extApiImpl: { [id: string]: typeof vscode } = Object.create(null);
-	let defaultApiImpl: typeof vscode;
+function createExtensionPathIndex(extensionService: ExtHostExtensionService): TPromise<TrieMap<IExtensionDescription>> {
 
 	// create trie to enable fast 'filename -> extension id' look up
 	const trie = new TrieMap<IExtensionDescription>(TrieMap.PathSplitter);
-	const extensions = extensionService.getAllExtensionDescriptions();
-	for (const ext of extensions) {
-		if (ext.main) {
-			const path = realpathSync(ext.extensionFolderPath);
-			trie.insert(path, ext);
+	const extensions = extensionService.getAllExtensionDescriptions().map(ext => {
+		if (!ext.main) {
+			return;
 		}
-	}
+		return new TPromise((resolve, reject) => {
+			realpath(ext.extensionFolderPath, (err, path) => {
+				if (err) {
+					reject(err);
+				} else {
+					trie.insert(path, ext);
+					resolve(void 0);
+				}
+			});
+		});
+	});
+
+	return TPromise.join(extensions).then(() => trie);
+}
+
+function defineAPI(factory: IExtensionApiFactory, extensionPaths: TrieMap<IExtensionDescription>): void {
+
+	// each extension is meant to get its own api implementation
+	const extApiImpl = new Map<string, typeof vscode>();
+	let defaultApiImpl: typeof vscode;
 
 	const node_module = <any>require.__$__nodeRequire('module');
 	const original = node_module._load;
@@ -460,11 +477,12 @@ export function defineAPI(factory: IExtensionApiFactory, extensionService: ExtHo
 		}
 
 		// get extension id from filename and api for extension
-		const ext = trie.findSubstr(parent.filename);
+		const ext = extensionPaths.findSubstr(parent.filename);
 		if (ext) {
-			let apiImpl = extApiImpl[ext.id];
+			let apiImpl = extApiImpl.get(ext.id);
 			if (!apiImpl) {
-				apiImpl = extApiImpl[ext.id] = factory(ext);
+				apiImpl = factory(ext);
+				extApiImpl.set(ext.id, apiImpl);
 			}
 			return apiImpl;
 		}

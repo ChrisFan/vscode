@@ -266,7 +266,8 @@ export enum CompletionItemKind {
 	Snippet,
 	Color,
 	File,
-	Reference
+	Reference,
+	Folder
 }
 /**
  * A completion item represents a text snippet that is
@@ -385,6 +386,7 @@ function convertKind(kind: CompletionItemKind): modes.SuggestionType {
 		case CompletionItemKind.Color: return 'color';
 		case CompletionItemKind.File: return 'file';
 		case CompletionItemKind.Reference: return 'reference';
+		case CompletionItemKind.Folder: return 'folder';
 	}
 	return 'property';
 }

@@ -3,50 +3,122 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import errors = require('vs/base/common/errors');
-import { IAction } from 'vs/base/common/actions';
-import { SelectActionItem } from 'vs/base/browser/ui/actionbar/actionbar';
+import * as nls from 'vs/nls';
+import * as lifecycle from 'vs/base/common/lifecycle';
+import * as errors from 'vs/base/common/errors';
+import { IAction, IActionRunner } from 'vs/base/common/actions';
+import { KeyCode } from 'vs/base/common/keyCodes';
+import * as dom from 'vs/base/browser/dom';
+import { StandardKeyboardEvent } from 'vs/base/browser/keyboardEvent';
+import { SelectBox } from 'vs/base/browser/ui/selectBox/selectBox';
+import { SelectActionItem, IActionItem } from 'vs/base/browser/ui/actionbar/actionbar';
+import { EventEmitter } from 'vs/base/common/eventEmitter';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
-import { IDebugService, IGlobalConfig, NO_CONFIGURATIONS_LABEL } from 'vs/workbench/parts/debug/common/debug';
+import { IDebugService } from 'vs/workbench/parts/debug/common/debug';
 
-export class SelectConfigurationActionItem extends SelectActionItem {
+const $ = dom.$;
+
+export class StartDebugActionItem extends EventEmitter implements IActionItem {
+
+	public actionRunner: IActionRunner;
+	private container: HTMLElement;
+	private start: HTMLElement;
+	private selectBox: SelectBox;
+	private toDispose: lifecycle.IDisposable[];
 
 	constructor(
-		action: IAction,
+		private context: any,
+		private action: IAction,
 		@IDebugService private debugService: IDebugService,
 		@IConfigurationService private configurationService: IConfigurationService
 	) {
-		super(null, action, [], -1);
+		super();
+		this.toDispose = [];
+		this.selectBox = new SelectBox([], -1);
+		this.registerListeners();
+	}
 
-		this.toDispose.push(configurationService.onDidUpdateConfiguration(e => {
-			this.updateOptions(true);
+	private registerListeners(): void {
+		this.toDispose.push(this.configurationService.onDidUpdateConfiguration(e => {
+			if (e.sourceConfig.launch) {
+				this.updateOptions();
+			}
 		}));
-		this.toDispose.push(this.debugService.getViewModel().onDidSelectConfigurationName(name => {
-			this.updateOptions(false);
+		this.toDispose.push(this.selectBox.onDidSelect(configurationName => {
+			this.debugService.getViewModel().setSelectedConfigurationName(configurationName);
 		}));
 	}
 
 	public render(container: HTMLElement): void {
-		super.render(container);
-		this.updateOptions(true);
+		this.container = container;
+		dom.addClass(container, 'start-debug-action-item');
+		this.start = dom.append(container, $('.icon'));
+		this.start.title = this.action.label;
+		this.start.tabIndex = 0;
+
+		this.toDispose.push(dom.addDisposableListener(this.start, dom.EventType.CLICK, () => {
+			this.start.blur();
+			this.actionRunner.run(this.action, this.context).done(null, errors.onUnexpectedError);
+		}));
+
+		this.toDispose.push(dom.addDisposableListener(this.start, dom.EventType.MOUSE_DOWN, () => {
+			if (this.selectBox.enabled) {
+				dom.addClass(this.start, 'active');
+			}
+		}));
+		this.toDispose.push(dom.addDisposableListener(this.start, dom.EventType.MOUSE_UP, () => {
+			dom.removeClass(this.start, 'active');
+		}));
+		this.toDispose.push(dom.addDisposableListener(this.start, dom.EventType.MOUSE_OUT, () => {
+			dom.removeClass(this.start, 'active');
+		}));
+
+		this.toDispose.push(dom.addDisposableListener(this.start, dom.EventType.KEY_UP, (e: KeyboardEvent) => {
+			let event = new StandardKeyboardEvent(e);
+			if (event.equals(KeyCode.Enter)) {
+				this.actionRunner.run(this.action, this.context).done(null, errors.onUnexpectedError);
+			}
+		}));
+
+		this.selectBox.render(dom.append(container, $('.configuration')));
+		this.updateOptions();
 	}
 
-	private updateOptions(changeDebugConfiguration: boolean): void {
-		const config = this.configurationService.getConfiguration<IGlobalConfig>('launch');
-		if (!config || !config.configurations || config.configurations.length === 0) {
-			this.setOptions([NO_CONFIGURATIONS_LABEL], 0);
-		} else {
-			const options = config.configurations.filter(cfg => !!cfg.name).map(cfg => cfg.name);
-			if (config.compounds) {
-				options.push(...config.compounds.filter(compound => !!compound.name).map(compound => compound.name));
-			}
+	public setActionContext(context: any): void {
+		this.context = context;
+	}
 
-			const selected = options.indexOf(this.debugService.getViewModel().selectedConfigurationName);
-			this.setOptions(options, selected);
+	public isEnabled(): boolean {
+		return this.selectBox.enabled;
+	}
+
+	public focus(): void {
+		this.start.focus();
+	}
+
+	public blur(): void {
+		this.container.blur();
+	}
+
+	public dispose(): void {
+		this.toDispose = lifecycle.dispose(this.toDispose);
+	}
+
+	private setEnabled(enabled: boolean): void {
+		this.selectBox.enabled = enabled;
+		if (!enabled) {
+			this.selectBox.setOptions([nls.localize('noConfigurations', "No Configurations")], 0);
 		}
+	}
 
-		if (changeDebugConfiguration) {
-			this.actionRunner.run(this._action, this.getSelected()).done(null, errors.onUnexpectedError);
+	private updateOptions(): void {
+		const options = this.debugService.getConfigurationManager().getConfigurationNames();
+		if (options.length === 0) {
+			this.setEnabled(false);
+		} else {
+			this.setEnabled(true);
+			const selected = options.indexOf(this.debugService.getViewModel().selectedConfigurationName);
+			this.selectBox.setOptions(options, selected);
 		}
 	}
 }
@@ -58,9 +130,16 @@ export class FocusProcessActionItem extends SelectActionItem {
 	) {
 		super(null, action, [], -1);
 
-		this.debugService.getViewModel().onDidFocusProcess(p => {
-			const names = this.debugService.getModel().getProcesses().map(p => p.name);
-			this.setOptions(names, p ? names.indexOf(p.name) : 0);
+		this.debugService.getViewModel().onDidFocusStackFrame(() => {
+			const process = this.debugService.getViewModel().focusedProcess;
+			if (process) {
+				const names = this.debugService.getModel().getProcesses().map(p => p.name);
+				this.select(names.indexOf(process.name));
+			}
+		});
+
+		this.debugService.getModel().onDidChangeCallStack(() => {
+			this.setOptions(this.debugService.getModel().getProcesses().map(p => p.name));
 		});
 	}
 }

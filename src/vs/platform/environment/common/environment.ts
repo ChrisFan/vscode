@@ -47,6 +47,8 @@ export interface IEnvironmentService {
 	userProductHome: string;
 	userDataPath: string;
 
+	appNameLong: string;
+	appQuality: string;
 	appSettingsHome: string;
 	appSettingsPath: string;
 	appKeybindingsPath: string;
@@ -71,4 +73,6 @@ export interface IEnvironmentService {
 
 	mainIPCHandle: string;
 	sharedIPCHandle: string;
+
+	nodeCachedDataDir: string;
 }

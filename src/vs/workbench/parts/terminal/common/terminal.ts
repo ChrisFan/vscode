@@ -19,11 +19,17 @@ export const TERMINAL_DEFAULT_SHELL_LINUX = !platform.isWindows ? (process.env.S
 export const TERMINAL_DEFAULT_SHELL_OSX = !platform.isWindows ? (process.env.SHELL || 'sh') : 'sh';
 export const TERMINAL_DEFAULT_SHELL_WINDOWS = processes.getWindowsShell();
 
-/**
- * A context key that is set when the integrated terminal has focus.
- */
+export const TERMINAL_DEFAULT_RIGHT_CLICK_COPY_PASTE = platform.isWindows;
+
+/**  A context key that is set when the integrated terminal has focus. */
 export const KEYBINDING_CONTEXT_TERMINAL_FOCUS = new RawContextKey<boolean>('terminalFocus', undefined);
+/**  A context key that is set when the integrated terminal does not have focus. */
 export const KEYBINDING_CONTEXT_TERMINAL_NOT_FOCUSED: ContextKeyExpr = KEYBINDING_CONTEXT_TERMINAL_FOCUS.toNegated();
+
+/** A keybinding context key that is set when the integrated terminal has text selected. */
+export const KEYBINDING_CONTEXT_TERMINAL_TEXT_SELECTED = new RawContextKey<boolean>('terminalTextSelected', undefined);
+/** A keybinding context key that is set when the integrated terminal does not have text selected. */
+export const KEYBINDING_CONTEXT_TERMINAL_TEXT_NOT_SELECTED: ContextKeyExpr = KEYBINDING_CONTEXT_TERMINAL_TEXT_SELECTED.toNegated();
 
 export const ITerminalService = createDecorator<ITerminalService>(TERMINAL_SERVICE_ID);
 
@@ -40,6 +46,7 @@ export interface ITerminalConfiguration {
 				osx: string[],
 				windows: string[]
 			},
+			rightClickCopyPaste: boolean,
 			cursorBlinking: boolean,
 			fontFamily: string,
 			fontLigatures: boolean,
@@ -47,7 +54,8 @@ export interface ITerminalConfiguration {
 			lineHeight: number,
 			setLocaleVariables: boolean,
 			scrollback: number,
-			commandsToSkipShell: string[]
+			commandsToSkipShell: string[],
+			cwd: string
 		}
 	};
 }
@@ -57,8 +65,10 @@ export interface ITerminalConfigHelper {
 	getFont(): ITerminalFont;
 	getFontLigaturesEnabled(): boolean;
 	getCursorBlink(): boolean;
+	getRightClickCopyPaste(): boolean;
 	getCommandsToSkipShell(): string[];
 	getScrollback(): number;
+	getCwd(): string;
 }
 
 export interface ITerminalFont {
@@ -72,6 +82,8 @@ export interface ITerminalFont {
 export interface IShell {
 	executable: string;
 	args: string[];
+	/** Whether to ignore a custom cwd (if the shell is being launched by an extension) */
+	ignoreCustomCwd?: boolean;
 }
 
 export interface ITerminalService {
@@ -86,7 +98,7 @@ export interface ITerminalService {
 	onInstanceTitleChanged: Event<string>;
 	terminalInstances: ITerminalInstance[];
 
-	createInstance(name?: string, shellPath?: string, shellArgs?: string[]): ITerminalInstance;
+	createInstance(name?: string, shellPath?: string, shellArgs?: string[], ignoreCustomCwd?: boolean): ITerminalInstance;
 	getInstanceFromId(terminalId: number): ITerminalInstance;
 	getInstanceLabels(): string[];
 	getActiveInstance(): ITerminalInstance;
@@ -139,9 +151,19 @@ export interface ITerminalInstance {
 	dispose(): void;
 
 	/**
+	 * Check if anything is selected in terminal.
+	 */
+	hasSelection(): boolean;
+
+	/**
 	 * Copies the terminal selection to the clipboard.
 	 */
 	copySelection(): void;
+
+	/**
+	 * Clear current selection.
+	 */
+	clearSelection(): void;
 
 	/**
 	 * Focuses the terminal instance.
@@ -193,22 +215,9 @@ export interface ITerminalInstance {
 	attachToElement(container: HTMLElement): void;
 
 	/**
-	 * Sets whether the terminal instance's cursor will blink or be solid.
-	 *
-	 * @param blink Whether the cursor will blink.
+	 * Updates the configuration of the terminal instance.
 	 */
-	setCursorBlink(blink: boolean): void;
-
-	/**
-	 * Sets the array of commands that skip the shell process so they can be handled by VS Code's
-	 * keybinding system.
-	 */
-	setCommandsToSkipShell(commands: string[]): void;
-
-	/**
-	 * Sets the maximum amount of lines that the buffer can store before discarding old ones.
-	 */
-	setScrollback(lineCount: number): void;
+	updateConfig(): void;
 
 	/**
 	 * Configure the dimensions of the terminal instance.

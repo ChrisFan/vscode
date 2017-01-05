@@ -23,8 +23,7 @@ import confregistry = require('vs/platform/configuration/common/configurationReg
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
 import quickopen = require('vs/workbench/browser/quickopen');
 import 'vs/workbench/parts/git/browser/gitEditorContributions';
-import { IActivityService, ProgressBadge, NumberBadge } from 'vs/workbench/services/activity/common/activityService';
-import { IEventService } from 'vs/platform/event/common/event';
+import { IActivityBarService, ProgressBadge, NumberBadge } from 'vs/workbench/services/activity/common/activityBarService';
 import { IMessageService } from 'vs/platform/message/common/message';
 import { IViewletService } from 'vs/workbench/services/viewlet/browser/viewlet';
 import { IWorkbenchEditorService } from 'vs/workbench/services/editor/common/editorService';
@@ -36,8 +35,7 @@ export class StatusUpdater implements ext.IWorkbenchContribution {
 	static ID = 'vs.git.statusUpdater';
 
 	private gitService: IGitService;
-	private eventService: IEventService;
-	private activityService: IActivityService;
+	private activityBarService: IActivityBarService;
 	private messageService: IMessageService;
 	private configurationService: IConfigurationService;
 	private progressBadgeDelayer: async.Delayer<void>;
@@ -45,14 +43,12 @@ export class StatusUpdater implements ext.IWorkbenchContribution {
 
 	constructor(
 		@IGitService gitService: IGitService,
-		@IEventService eventService: IEventService,
-		@IActivityService activityService: IActivityService,
+		@IActivityBarService activityBarService: IActivityBarService,
 		@IMessageService messageService: IMessageService,
 		@IConfigurationService configurationService: IConfigurationService
 	) {
 		this.gitService = gitService;
-		this.eventService = eventService;
-		this.activityService = activityService;
+		this.activityBarService = activityBarService;
 		this.messageService = messageService;
 		this.configurationService = configurationService;
 
@@ -66,12 +62,12 @@ export class StatusUpdater implements ext.IWorkbenchContribution {
 	private onGitServiceChange(): void {
 		if (this.gitService.getState() !== git.ServiceState.OK) {
 			this.progressBadgeDelayer.cancel();
-			this.activityService.showActivity('workbench.view.git', null, 'git-viewlet-label');
+			this.activityBarService.showActivity('workbench.view.git', null, 'git-viewlet-label');
 		} else if (this.gitService.isIdle()) {
 			this.showChangesBadge();
 		} else {
 			this.progressBadgeDelayer.trigger(() => {
-				this.activityService.showActivity('workbench.view.git', new ProgressBadge(() => nls.localize('gitProgressBadge', 'Running git status')), 'git-viewlet-label-progress');
+				this.activityBarService.showActivity('workbench.view.git', new ProgressBadge(() => nls.localize('gitProgressBadge', 'Running git status')), 'git-viewlet-label-progress');
 			});
 		}
 	}
@@ -95,7 +91,7 @@ export class StatusUpdater implements ext.IWorkbenchContribution {
 			.filter(filter);
 
 		const badge = new NumberBadge(statuses.length, num => nls.localize('gitPendingChangesBadge', '{0} pending changes', num));
-		this.activityService.showActivity('workbench.view.git', badge, 'git-viewlet-label');
+		this.activityBarService.showActivity('workbench.view.git', badge, 'git-viewlet-label');
 	}
 
 	public getId(): string {
@@ -221,6 +217,12 @@ export function registerContributions(): void {
 				enum: ['all', 'tracked', 'off'],
 				default: 'all',
 				description: nls.localize('countBadge', "Controls the git badge counter."),
+			},
+			'git.checkoutType': {
+				type: 'string',
+				enum: ['all', 'local', 'tags', 'remote'],
+				default: 'all',
+				description: nls.localize('checkoutType', "Controls what type of branches are listed."),
 			}
 		}
 	});

@@ -34,10 +34,12 @@ import FormattingProvider from './features/formattingProvider';
 import BufferSyncSupport from './features/bufferSyncSupport';
 import CompletionItemProvider from './features/completionItemProvider';
 import WorkspaceSymbolProvider from './features/workspaceSymbolProvider';
+import CodeActionProvider from './features/codeActionProvider';
 
-import * as VersionStatus from './utils/versionStatus';
-import * as ProjectStatus from './utils/projectStatus';
 import * as BuildStatus from './utils/buildStatus';
+import * as ProjectStatus from './utils/projectStatus';
+import TypingsStatus from './utils/typingsStatus';
+import * as VersionStatus from './utils/versionStatus';
 
 interface LanguageDescription {
 	id: string;
@@ -96,14 +98,15 @@ const validateSetting = 'validate.enable';
 class LanguageProvider {
 
 	private description: LanguageDescription;
-	private extensions: Map<boolean>;
-	private syntaxDiagnostics: Map<Diagnostic[]>;
+	private extensions: ObjectMap<boolean>;
+	private syntaxDiagnostics: ObjectMap<Diagnostic[]>;
 	private currentDiagnostics: DiagnosticCollection;
 	private bufferSyncSupport: BufferSyncSupport;
 
 	private completionItemProvider: CompletionItemProvider;
 	private formattingProvider: FormattingProvider;
-	private formattingProviderRegistration: Disposable;
+	private formattingProviderRegistration: Disposable | null;
+	private typingsStatus: TypingsStatus;
 
 	private _validate: boolean;
 
@@ -121,6 +124,7 @@ class LanguageProvider {
 		this.syntaxDiagnostics = Object.create(null);
 		this.currentDiagnostics = languages.createDiagnosticCollection(description.id);
 
+		this.typingsStatus = new TypingsStatus(client);
 
 		workspace.onDidChangeConfiguration(this.configurationChanged, this);
 		this.configurationChanged();
@@ -136,7 +140,7 @@ class LanguageProvider {
 	private registerProviders(client: TypeScriptServiceClient): void {
 		let config = workspace.getConfiguration(this.id);
 
-		this.completionItemProvider = new CompletionItemProvider(client);
+		this.completionItemProvider = new CompletionItemProvider(client, this.typingsStatus);
 		this.completionItemProvider.updateConfiguration(config);
 
 		let hoverProvider = new HoverProvider(client);
@@ -164,6 +168,9 @@ class LanguageProvider {
 			languages.registerRenameProvider(selector, renameProvider);
 			languages.registerOnTypeFormattingEditProvider(selector, this.formattingProvider, ';', '}', '\n');
 			languages.registerWorkspaceSymbolProvider(new WorkspaceSymbolProvider(client, modeId));
+			if (client.apiVersion.has213Features()) {
+				languages.registerCodeActionsProvider(selector, new CodeActionProvider(client, modeId));
+			}
 			languages.setLanguageConfiguration(modeId, {
 				indentationRules: {
 					// ^(.*\*/)?\s*\}.*$
@@ -214,7 +221,7 @@ class LanguageProvider {
 			this.formattingProvider.updateConfiguration(config);
 			if (!this.formattingProvider.isEnabled() && this.formattingProviderRegistration) {
 				this.formattingProviderRegistration.dispose();
-				this.formattingProviderRegistration = undefined;
+				this.formattingProviderRegistration = null;
 
 			} else if (this.formattingProvider.isEnabled() && !this.formattingProviderRegistration) {
 				this.formattingProviderRegistration = languages.registerDocumentRangeFormattingEditProvider(this.description.modeIds, this.formattingProvider);
@@ -228,7 +235,7 @@ class LanguageProvider {
 			return true;
 		}
 		let basename = path.basename(file);
-		return basename && basename === this.description.configFile;
+		return !!basename && basename === this.description.configFile;
 	}
 
 	public get id(): string {
@@ -285,9 +292,9 @@ class LanguageProvider {
 class TypeScriptServiceClientHost implements ITypescriptServiceClientHost {
 	private client: TypeScriptServiceClient;
 	private languages: LanguageProvider[];
-	private languagePerId: Map<LanguageProvider>;
+	private languagePerId: ObjectMap<LanguageProvider>;
 
-	constructor(descriptions: LanguageDescription[], storagePath: string, globalState: Memento) {
+	constructor(descriptions: LanguageDescription[], storagePath: string | undefined, globalState: Memento) {
 		let handleProjectCreateOrDelete = () => {
 			this.client.execute('reloadProjects', null, false);
 			this.triggerAllDiagnostics();
@@ -325,7 +332,7 @@ class TypeScriptServiceClientHost implements ITypescriptServiceClientHost {
 		return !!this.findLanguage(file);
 	}
 
-	private findLanguage(file: string): LanguageProvider {
+	private findLanguage(file: string): LanguageProvider | null {
 		for (let i = 0; i < this.languages.length; i++) {
 			let language = this.languages[i];
 			if (language.handles(file)) {
@@ -348,7 +355,7 @@ class TypeScriptServiceClientHost implements ITypescriptServiceClientHost {
 
 	/* internal */ syntaxDiagnosticsReceived(event: Proto.DiagnosticEvent): void {
 		let body = event.body;
-		if (body.diagnostics) {
+		if (body && body.diagnostics) {
 			let language = this.findLanguage(body.file);
 			if (language) {
 				language.syntaxDiagnosticsReceived(body.file, this.createMarkerDatas(body.diagnostics, language.diagnosticSource));
@@ -358,7 +365,7 @@ class TypeScriptServiceClientHost implements ITypescriptServiceClientHost {
 
 	/* internal */ semanticDiagnosticsReceived(event: Proto.DiagnosticEvent): void {
 		let body = event.body;
-		if (body.diagnostics) {
+		if (body && body.diagnostics) {
 			let language = this.findLanguage(body.file);
 			if (language) {
 				language.semanticDiagnosticsReceived(body.file, this.createMarkerDatas(body.diagnostics, language.diagnosticSource));
@@ -427,6 +434,7 @@ class TypeScriptServiceClientHost implements ITypescriptServiceClientHost {
 			let range = new Range(start.line - 1, start.offset - 1, end.line - 1, end.offset - 1);
 			let converted = new Diagnostic(range, text);
 			converted.source = source;
+			converted.code = '' + diagnostic.code;
 			result.push(converted);
 		}
 		return result;

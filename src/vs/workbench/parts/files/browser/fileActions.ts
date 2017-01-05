@@ -15,21 +15,18 @@ import URI from 'vs/base/common/uri';
 import errors = require('vs/base/common/errors');
 import { toErrorMessage } from 'vs/base/common/errorMessage';
 import strings = require('vs/base/common/strings');
-import { Event, EventType as CommonEventType } from 'vs/base/common/events';
+import { EventType as CommonEventType } from 'vs/base/common/events';
 import severity from 'vs/base/common/severity';
 import diagnostics = require('vs/base/common/diagnostics');
-import { BaseTextEditor } from 'vs/workbench/browser/parts/editor/textEditor';
 import { Action, IAction } from 'vs/base/common/actions';
 import { MessageType, IInputValidator } from 'vs/base/browser/ui/inputbox/inputBox';
 import { ITree, IHighlightEvent } from 'vs/base/parts/tree/browser/tree';
 import { dispose, IDisposable } from 'vs/base/common/lifecycle';
 import { VIEWLET_ID } from 'vs/workbench/parts/files/common/files';
 import labels = require('vs/base/common/labels');
-import { LocalFileChangeEvent, ITextFileService } from 'vs/workbench/services/textfile/common/textfiles';
-import { IFileService, IFileStat, IImportResult } from 'vs/platform/files/common/files';
-import { DiffEditorInput, toDiffLabel } from 'vs/workbench/common/editor/diffEditorInput';
-import { asFileEditorInput, getUntitledOrFileResource, IEditorIdentifier, EditorInput } from 'vs/workbench/common/editor';
-import { FileEditorInput } from 'vs/workbench/parts/files/common/editors/fileEditorInput';
+import { ITextFileService } from 'vs/workbench/services/textfile/common/textfiles';
+import { IFileService, IFileStat } from 'vs/platform/files/common/files';
+import { toResource, IEditorIdentifier, EditorInput } from 'vs/workbench/common/editor';
 import { FileStat, NewStatPlaceholder } from 'vs/workbench/parts/files/common/explorerViewModel';
 import { ExplorerView } from 'vs/workbench/parts/files/browser/views/explorerView';
 import { ExplorerViewlet } from 'vs/workbench/parts/files/browser/explorerViewlet';
@@ -39,17 +36,16 @@ import { IWorkbenchEditorService } from 'vs/workbench/services/editor/common/edi
 import { CollapseAction } from 'vs/workbench/browser/viewlet';
 import { IKeybindingService } from 'vs/platform/keybinding/common/keybinding';
 import { IEditorGroupService } from 'vs/workbench/services/group/common/groupService';
-import { IQuickOpenService, IFilePickOpenEntry } from 'vs/workbench/services/quickopen/common/quickOpenService';
+import { IQuickOpenService, IFilePickOpenEntry } from 'vs/platform/quickOpen/common/quickOpen';
 import { IHistoryService } from 'vs/workbench/services/history/common/history';
 import { IViewletService } from 'vs/workbench/services/viewlet/browser/viewlet';
 import { Position, IResourceInput, IEditorInput } from 'vs/platform/editor/common/editor';
-import { IEventService } from 'vs/platform/event/common/event';
 import { IInstantiationService, IConstructorSignature2 } from 'vs/platform/instantiation/common/instantiation';
 import { IMessageService, IMessageWithAction, IConfirmation, Severity, CancelAction } from 'vs/platform/message/common/message';
 import { IWorkspaceContextService } from 'vs/platform/workspace/common/workspace';
-import { KeyMod, KeyCode } from 'vs/base/common/keyCodes';
-import { Keybinding } from 'vs/base/common/keybinding';
+import { Keybinding, KeyMod, KeyCode } from 'vs/base/common/keyCodes';
 import { Selection } from 'vs/editor/common/core/selection';
+import { getCodeEditor } from 'vs/editor/common/services/codeEditorService';
 
 export interface IEditableData {
 	action: IAction;
@@ -69,36 +65,21 @@ export class BaseFileAction extends Action {
 	constructor(
 		id: string,
 		label: string,
-		@IWorkspaceContextService private _contextService: IWorkspaceContextService,
-		@IWorkbenchEditorService private _editorService: IWorkbenchEditorService,
 		@IFileService private _fileService: IFileService,
 		@IMessageService private _messageService: IMessageService,
-		@ITextFileService private _textFileService: ITextFileService,
-		@IEventService private _eventService: IEventService
+		@ITextFileService private _textFileService: ITextFileService
 	) {
 		super(id, label);
 
 		this.enabled = false;
 	}
 
-	public get contextService() {
-		return this._contextService;
-	}
-
 	public get messageService() {
 		return this._messageService;
 	}
 
-	public get editorService() {
-		return this._editorService;
-	}
-
 	public get fileService() {
 		return this._fileService;
-	}
-
-	public get eventService() {
-		return this._eventService;
 	}
 
 	public get textFileService() {
@@ -118,7 +99,7 @@ export class BaseFileAction extends Action {
 	}
 
 	_updateEnablement(): void {
-		this.enabled = !!(this._contextService && this._fileService && this._editorService && this._isEnabled());
+		this.enabled = !!(this._fileService && this._isEnabled());
 	}
 
 	protected onError(error: any): void {
@@ -158,15 +139,12 @@ export class TriggerRenameFileAction extends BaseFileAction {
 	constructor(
 		tree: ITree,
 		element: FileStat,
-		@IWorkspaceContextService contextService: IWorkspaceContextService,
-		@IWorkbenchEditorService editorService: IWorkbenchEditorService,
 		@IFileService fileService: IFileService,
 		@IMessageService messageService: IMessageService,
 		@ITextFileService textFileService: ITextFileService,
-		@IEventService eventService: IEventService,
 		@IInstantiationService instantiationService: IInstantiationService
 	) {
-		super(TriggerRenameFileAction.ID, nls.localize('rename', "Rename"), contextService, editorService, fileService, messageService, textFileService, eventService);
+		super(TriggerRenameFileAction.ID, nls.localize('rename', "Rename"), fileService, messageService, textFileService);
 
 		this.tree = tree;
 		this.element = element;
@@ -230,14 +208,11 @@ export abstract class BaseRenameAction extends BaseFileAction {
 		id: string,
 		label: string,
 		element: FileStat,
-		@IWorkspaceContextService contextService: IWorkspaceContextService,
-		@IWorkbenchEditorService editorService: IWorkbenchEditorService,
 		@IFileService fileService: IFileService,
 		@IMessageService messageService: IMessageService,
-		@ITextFileService textFileService: ITextFileService,
-		@IEventService eventService: IEventService
+		@ITextFileService textFileService: ITextFileService
 	) {
-		super(id, label, contextService, editorService, fileService, messageService, textFileService, eventService);
+		super(id, label, fileService, messageService, textFileService);
 
 		this.element = element;
 	}
@@ -262,11 +237,7 @@ export abstract class BaseRenameAction extends BaseFileAction {
 		}
 
 		// Call function and Emit Event through viewer
-		const promise = this.runAction(name).then((stat: IFileStat) => {
-			if (stat) {
-				this.onSuccess(stat);
-			}
-		}, (error: any) => {
+		const promise = this.runAction(name).then(null, (error: any) => {
 			this.onError(error);
 		});
 
@@ -290,31 +261,19 @@ export abstract class BaseRenameAction extends BaseFileAction {
 	}
 
 	public abstract runAction(newName: string): TPromise<any>;
-
-	public onSuccess(stat: IFileStat): void {
-		let before: IFileStat = null;
-		if (!(this.element instanceof NewStatPlaceholder)) {
-			before = this.element.clone(); // Clone element to not expose viewers element to listeners
-		}
-
-		this.eventService.emit('files.internal:fileChanged', new LocalFileChangeEvent(before, stat));
-	}
 }
 
-export class RenameFileAction extends BaseRenameAction {
+class RenameFileAction extends BaseRenameAction {
 
 	public static ID = 'workbench.files.action.renameFile';
 
 	constructor(
 		element: FileStat,
-		@IWorkspaceContextService contextService: IWorkspaceContextService,
-		@IWorkbenchEditorService editorService: IWorkbenchEditorService,
 		@IFileService fileService: IFileService,
 		@IMessageService messageService: IMessageService,
-		@ITextFileService textFileService: ITextFileService,
-		@IEventService eventService: IEventService
+		@ITextFileService textFileService: ITextFileService
 	) {
-		super(RenameFileAction.ID, nls.localize('rename', "Rename"), element, contextService, editorService, fileService, messageService, textFileService, eventService);
+		super(RenameFileAction.ID, nls.localize('rename', "Rename"), element, fileService, messageService, textFileService);
 
 		this._updateEnablement();
 	}
@@ -372,14 +331,11 @@ export class BaseNewAction extends BaseFileAction {
 		isFile: boolean,
 		editableAction: BaseRenameAction,
 		element: FileStat,
-		@IWorkspaceContextService contextService: IWorkspaceContextService,
-		@IWorkbenchEditorService editorService: IWorkbenchEditorService,
 		@IFileService fileService: IFileService,
 		@IMessageService messageService: IMessageService,
-		@ITextFileService textFileService: ITextFileService,
-		@IEventService eventService: IEventService
+		@ITextFileService textFileService: ITextFileService
 	) {
-		super(id, label, contextService, editorService, fileService, messageService, textFileService, eventService);
+		super(id, label, fileService, messageService, textFileService);
 
 		if (element) {
 			this.presetFolder = element.isDirectory ? element : element.parent;
@@ -463,15 +419,12 @@ export class NewFileAction extends BaseNewAction {
 	constructor(
 		tree: ITree,
 		element: FileStat,
-		@IWorkspaceContextService contextService: IWorkspaceContextService,
-		@IWorkbenchEditorService editorService: IWorkbenchEditorService,
 		@IFileService fileService: IFileService,
 		@IMessageService messageService: IMessageService,
 		@ITextFileService textFileService: ITextFileService,
-		@IEventService eventService: IEventService,
 		@IInstantiationService instantiationService: IInstantiationService
 	) {
-		super('workbench.action.files.newFile', nls.localize('newFile', "New File"), tree, true, instantiationService.createInstance(CreateFileAction, element), null, contextService, editorService, fileService, messageService, textFileService, eventService);
+		super('workbench.action.files.newFile', nls.localize('newFile', "New File"), tree, true, instantiationService.createInstance(CreateFileAction, element), null, fileService, messageService, textFileService);
 
 		this.class = 'explorer-action new-file';
 		this._updateEnablement();
@@ -484,15 +437,12 @@ export class NewFolderAction extends BaseNewAction {
 	constructor(
 		tree: ITree,
 		element: FileStat,
-		@IWorkspaceContextService contextService: IWorkspaceContextService,
-		@IWorkbenchEditorService editorService: IWorkbenchEditorService,
 		@IFileService fileService: IFileService,
 		@IMessageService messageService: IMessageService,
 		@ITextFileService textFileService: ITextFileService,
-		@IEventService eventService: IEventService,
 		@IInstantiationService instantiationService: IInstantiationService
 	) {
-		super('workbench.action.files.newFolder', nls.localize('newFolder', "New Folder"), tree, false, instantiationService.createInstance(CreateFolderAction, element), null, contextService, editorService, fileService, messageService, textFileService, eventService);
+		super('workbench.action.files.newFolder', nls.localize('newFolder', "New Folder"), tree, false, instantiationService.createInstance(CreateFolderAction, element), null, fileService, messageService, textFileService);
 
 		this.class = 'explorer-action new-folder';
 		this._updateEnablement();
@@ -609,14 +559,11 @@ export class CreateFileAction extends BaseCreateAction {
 
 	constructor(
 		element: FileStat,
-		@IWorkspaceContextService contextService: IWorkspaceContextService,
-		@IWorkbenchEditorService editorService: IWorkbenchEditorService,
 		@IFileService fileService: IFileService,
 		@IMessageService messageService: IMessageService,
-		@ITextFileService textFileService: ITextFileService,
-		@IEventService eventService: IEventService
+		@ITextFileService textFileService: ITextFileService
 	) {
-		super(CreateFileAction.ID, CreateFileAction.LABEL, element, contextService, editorService, fileService, messageService, textFileService, eventService);
+		super(CreateFileAction.ID, CreateFileAction.LABEL, element, fileService, messageService, textFileService);
 
 		this._updateEnablement();
 	}
@@ -636,14 +583,11 @@ export class CreateFolderAction extends BaseCreateAction {
 
 	constructor(
 		element: FileStat,
-		@IWorkspaceContextService contextService: IWorkspaceContextService,
-		@IWorkbenchEditorService editorService: IWorkbenchEditorService,
 		@IFileService fileService: IFileService,
 		@IMessageService messageService: IMessageService,
-		@ITextFileService textFileService: ITextFileService,
-		@IEventService eventService: IEventService
+		@ITextFileService textFileService: ITextFileService
 	) {
-		super(CreateFolderAction.ID, CreateFolderAction.LABEL, null, contextService, editorService, fileService, messageService, textFileService, eventService);
+		super(CreateFolderAction.ID, CreateFolderAction.LABEL, null, fileService, messageService, textFileService);
 
 		this._updateEnablement();
 	}
@@ -666,14 +610,11 @@ export class BaseDeleteFileAction extends BaseFileAction {
 		tree: ITree,
 		element: FileStat,
 		useTrash: boolean,
-		@IWorkspaceContextService contextService: IWorkspaceContextService,
-		@IWorkbenchEditorService editorService: IWorkbenchEditorService,
 		@IFileService fileService: IFileService,
 		@IMessageService messageService: IMessageService,
-		@ITextFileService textFileService: ITextFileService,
-		@IEventService eventService: IEventService
+		@ITextFileService textFileService: ITextFileService
 	) {
-		super(id, label, contextService, editorService, fileService, messageService, textFileService, eventService);
+		super(id, label, fileService, messageService, textFileService);
 
 		this.tree = tree;
 		this.element = element;
@@ -759,10 +700,6 @@ export class BaseDeleteFileAction extends BaseFileAction {
 				}
 			}
 
-			// Since a delete operation can take a while we want to emit the event proactively to avoid issues
-			// with stale entries in the explorer tree.
-			this.eventService.emit('files.internal:fileChanged', new LocalFileChangeEvent(this.element.clone(), null));
-
 			// Call function
 			const servicePromise = this.fileService.del(this.element.resource, this.useTrash).then(() => {
 				if (this.element.parent) {
@@ -777,10 +714,6 @@ export class BaseDeleteFileAction extends BaseFileAction {
 				}
 
 				this.onErrorWithRetry(error, () => this.run(), extraAction);
-
-				// Since the delete failed, best we can do is to refresh the explorer from the root to show the current state of files.
-				const event = new LocalFileChangeEvent(new FileStat(this.contextService.getWorkspace().resource, true, true), new FileStat(this.contextService.getWorkspace().resource, true, true));
-				this.eventService.emit('files.internal:fileChanged', event);
 
 				// Focus back to tree
 				this.tree.DOMFocus();
@@ -798,14 +731,11 @@ export class MoveFileToTrashAction extends BaseDeleteFileAction {
 	constructor(
 		tree: ITree,
 		element: FileStat,
-		@IWorkspaceContextService contextService: IWorkspaceContextService,
-		@IWorkbenchEditorService editorService: IWorkbenchEditorService,
 		@IFileService fileService: IFileService,
 		@IMessageService messageService: IMessageService,
-		@ITextFileService textFileService: ITextFileService,
-		@IEventService eventService: IEventService
+		@ITextFileService textFileService: ITextFileService
 	) {
-		super(MoveFileToTrashAction.ID, nls.localize('delete', "Delete"), tree, element, true, contextService, editorService, fileService, messageService, textFileService, eventService);
+		super(MoveFileToTrashAction.ID, nls.localize('delete', "Delete"), tree, element, true, fileService, messageService, textFileService);
 	}
 }
 
@@ -819,14 +749,11 @@ export class ImportFileAction extends BaseFileAction {
 		tree: ITree,
 		element: FileStat,
 		clazz: string,
-		@IWorkspaceContextService contextService: IWorkspaceContextService,
-		@IWorkbenchEditorService editorService: IWorkbenchEditorService,
 		@IFileService fileService: IFileService,
 		@IMessageService messageService: IMessageService,
-		@ITextFileService textFileService: ITextFileService,
-		@IEventService eventService: IEventService
+		@ITextFileService textFileService: ITextFileService
 	) {
-		super(ImportFileAction.ID, nls.localize('importFiles', "Import Files"), contextService, editorService, fileService, messageService, textFileService, eventService);
+		super(ImportFileAction.ID, nls.localize('importFiles', "Import Files"), fileService, messageService, textFileService);
 
 		this.tree = tree;
 		this.element = element;
@@ -896,21 +823,9 @@ export class ImportFileAction extends BaseFileAction {
 					const importPromisesFactory: ITask<TPromise<void>>[] = [];
 					filesArray.forEach((file) => {
 						importPromisesFactory.push(() => {
-							const sourceFile = URI.file((<any>file).path);
+							const sourceFile = URI.file(file.path);
 
-							return this.fileService.importFile(sourceFile, targetElement.resource).then((result: IImportResult) => {
-								if (result.stat) {
-
-									// Emit Deleted Event if file gets replaced unless it is the same file
-									const oldFile = targetNames[isLinux ? file.name : file.name.toLowerCase()];
-									if (oldFile && oldFile.resource.fsPath !== result.stat.resource.fsPath) {
-										this.eventService.emit('files.internal:fileChanged', new LocalFileChangeEvent(oldFile, null));
-									}
-
-									// Emit Import Event
-									this.eventService.emit('files.internal:fileChanged', new FileImportedEvent(result.stat, result.isNew, context.event));
-								}
-							}, (error: any) => {
+							return this.fileService.importFile(sourceFile, targetElement.resource).then(null, (error: any) => {
 								this.messageService.show(Severity.Error, error);
 							});
 						});
@@ -930,33 +845,6 @@ export class ImportFileAction extends BaseFileAction {
 	}
 }
 
-/** File import event is emitted when a file is import into the workbench. */
-export class FileImportedEvent extends LocalFileChangeEvent {
-	private isNew: boolean;
-
-	constructor(stat?: IFileStat, isNew?: boolean, originalEvent?: Event) {
-		super(null, stat, originalEvent);
-
-		this.isNew = isNew;
-	}
-
-	public gotAdded(): boolean {
-		return this.isNew;
-	}
-
-	public gotMoved(): boolean {
-		return false;
-	}
-
-	public gotUpdated(): boolean {
-		return !this.isNew;
-	}
-
-	public gotDeleted(): boolean {
-		return false;
-	}
-}
-
 // Copy File/Folder
 let fileToCopy: FileStat;
 export class CopyFileAction extends BaseFileAction {
@@ -967,14 +855,11 @@ export class CopyFileAction extends BaseFileAction {
 	constructor(
 		tree: ITree,
 		element: FileStat,
-		@IWorkspaceContextService contextService: IWorkspaceContextService,
-		@IWorkbenchEditorService editorService: IWorkbenchEditorService,
 		@IFileService fileService: IFileService,
 		@IMessageService messageService: IMessageService,
-		@ITextFileService textFileService: ITextFileService,
-		@IEventService eventService: IEventService
+		@ITextFileService textFileService: ITextFileService
 	) {
-		super(CopyFileAction.ID, nls.localize('copyFile', "Copy"), contextService, editorService, fileService, messageService, textFileService, eventService);
+		super(CopyFileAction.ID, nls.localize('copyFile', "Copy"), fileService, messageService, textFileService);
 
 		this.tree = tree;
 		this.element = element;
@@ -1007,15 +892,12 @@ export class PasteFileAction extends BaseFileAction {
 	constructor(
 		tree: ITree,
 		element: FileStat,
-		@IWorkspaceContextService contextService: IWorkspaceContextService,
-		@IWorkbenchEditorService editorService: IWorkbenchEditorService,
 		@IFileService fileService: IFileService,
 		@IMessageService messageService: IMessageService,
 		@ITextFileService textFileService: ITextFileService,
-		@IEventService eventService: IEventService,
 		@IInstantiationService private instantiationService: IInstantiationService
 	) {
-		super(PasteFileAction.ID, nls.localize('pasteFile', "Paste"), contextService, editorService, fileService, messageService, textFileService, eventService);
+		super(PasteFileAction.ID, nls.localize('pasteFile', "Paste"), fileService, messageService, textFileService);
 
 		this.tree = tree;
 		this.element = element;
@@ -1073,14 +955,11 @@ export class DuplicateFileAction extends BaseFileAction {
 		tree: ITree,
 		element: FileStat,
 		target: FileStat,
-		@IWorkspaceContextService contextService: IWorkspaceContextService,
-		@IWorkbenchEditorService editorService: IWorkbenchEditorService,
 		@IFileService fileService: IFileService,
 		@IMessageService messageService: IMessageService,
-		@ITextFileService textFileService: ITextFileService,
-		@IEventService eventService: IEventService
+		@ITextFileService textFileService: ITextFileService
 	) {
-		super('workbench.files.action.duplicateFile', nls.localize('duplicateFile', "Duplicate"), contextService, editorService, fileService, messageService, textFileService, eventService);
+		super('workbench.files.action.duplicateFile', nls.localize('duplicateFile', "Duplicate"), fileService, messageService, textFileService);
 
 		this.tree = tree;
 		this.element = element;
@@ -1095,10 +974,8 @@ export class DuplicateFileAction extends BaseFileAction {
 			this.tree.clearHighlight();
 		}
 
-		// Copy File and emit event
-		const result = this.fileService.copyFile(this.element.resource, this.findTarget()).then((stat: IFileStat) => {
-			this.eventService.emit('files.internal:fileChanged', new LocalFileChangeEvent(null, stat));
-		}, (error: any) => {
+		// Copy File
+		const result = this.fileService.copyFile(this.element.resource, this.findTarget()).then(null, (error: any) => {
 			this.onError(error);
 		});
 
@@ -1242,11 +1119,11 @@ export class GlobalCompareResourcesAction extends Action {
 	}
 
 	public run(): TPromise<any> {
-		const fileInput = asFileEditorInput(this.editorService.getActiveEditorInput());
-		if (fileInput) {
+		const activeResource = toResource(this.editorService.getActiveEditorInput(), { filter: ['file', 'untitled'] });
+		if (activeResource) {
 
 			// Keep as resource to compare
-			globalResourceToCompare = fileInput.getResource();
+			globalResourceToCompare = activeResource;
 
 			// Pick another entry from history
 			interface IHistoryPickEntry extends IFilePickOpenEntry {
@@ -1260,18 +1137,22 @@ export class GlobalCompareResourcesAction extends Action {
 				let description: string;
 
 				if (input instanceof EditorInput) {
-					return void 0; // only files supported
+					resource = toResource(input, { filter: ['file', 'untitled'] });
+				} else {
+					resource = (input as IResourceInput).resource;
 				}
 
-				const resourceInput = input as IResourceInput;
-				resource = resourceInput.resource;
-				label = paths.basename(resourceInput.resource.fsPath);
-				description = labels.getPathLabel(paths.dirname(resource.fsPath), this.contextService);
+				if (!resource) {
+					return void 0; // only support to compare with files and untitled
+				}
+
+				label = paths.basename(resource.fsPath);
+				description = resource.scheme === 'file' ? labels.getPathLabel(paths.dirname(resource.fsPath), this.contextService) : void 0;
 
 				return <IHistoryPickEntry>{ input, resource, label, description };
 			}).filter(p => !!p);
 
-			return this.quickOpenService.pick(picks, { placeHolder: nls.localize('pickHistory', "Select an editor history entry to compare with"), autoFocus: { autoFocusFirstEntry: true }, matchOnDescription: true }).then(pick => {
+			return this.quickOpenService.pick(picks, { placeHolder: nls.localize('pickHistory', "Select a previously opened file to compare with"), autoFocus: { autoFocusFirstEntry: true }, matchOnDescription: true }).then(pick => {
 				if (pick) {
 					const compareAction = this.instantiationService.createInstance(CompareResourcesAction, pick.resource, null);
 					if (compareAction._isEnabled()) {
@@ -1297,8 +1178,6 @@ export class CompareResourcesAction extends Action {
 	constructor(
 		resource: URI,
 		tree: ITree,
-		@IWorkspaceContextService private contextService: IWorkspaceContextService,
-		@IInstantiationService private instantiationService: IInstantiationService,
 		@IWorkbenchEditorService private editorService: IWorkbenchEditorService
 	) {
 		super('workbench.files.action.compareFiles', CompareResourcesAction.computeLabel());
@@ -1353,10 +1232,10 @@ export class CompareResourcesAction extends Action {
 			this.tree.clearHighlight();
 		}
 
-		const leftInput = this.instantiationService.createInstance(FileEditorInput, globalResourceToCompare, void 0);
-		const rightInput = this.instantiationService.createInstance(FileEditorInput, this.resource, void 0);
-
-		return this.editorService.openEditor(new DiffEditorInput(toDiffLabel(globalResourceToCompare, this.resource, this.contextService), null, leftInput, rightInput));
+		return this.editorService.openEditor({
+			leftResource: globalResourceToCompare,
+			rightResource: this.resource
+		});
 	}
 }
 
@@ -1413,7 +1292,7 @@ export abstract class BaseSaveFileAction extends BaseActionWithErrorReporting {
 		if (this.resource) {
 			source = this.resource;
 		} else {
-			source = getUntitledOrFileResource(this.editorService.getActiveEditorInput(), true);
+			source = toResource(this.editorService.getActiveEditorInput(), { supportSideBySide: true, filter: ['file', 'untitled'] });
 		}
 
 		if (source) {
@@ -1430,10 +1309,11 @@ export abstract class BaseSaveFileAction extends BaseActionWithErrorReporting {
 
 				let selectionOfSource: Selection;
 				const activeEditor = this.editorService.getActiveEditor();
-				if (activeEditor instanceof BaseTextEditor) {
-					const activeResource = getUntitledOrFileResource(activeEditor.input, true);
+				const editor = getCodeEditor(activeEditor);
+				if (editor) {
+					const activeResource = toResource(activeEditor.input, { supportSideBySide: true, filter: ['file', 'untitled'] });
 					if (activeResource && activeResource.toString() === source.toString()) {
-						selectionOfSource = <Selection>activeEditor.getSelection();
+						selectionOfSource = <Selection>editor.getSelection();
 					}
 				}
 
@@ -1531,10 +1411,10 @@ export abstract class BaseSaveAllAction extends BaseActionWithErrorReporting {
 	private registerListeners(): void {
 
 		// listen to files being changed locally
-		this.toDispose.push(this.textFileService.models.onModelDirty(e => this.updateEnablement(true)));
-		this.toDispose.push(this.textFileService.models.onModelSaved(e => this.updateEnablement(false)));
-		this.toDispose.push(this.textFileService.models.onModelReverted(e => this.updateEnablement(false)));
-		this.toDispose.push(this.textFileService.models.onModelSaveError(e => this.updateEnablement(true)));
+		this.toDispose.push(this.textFileService.models.onModelsDirty(e => this.updateEnablement(true)));
+		this.toDispose.push(this.textFileService.models.onModelsSaved(e => this.updateEnablement(false)));
+		this.toDispose.push(this.textFileService.models.onModelsReverted(e => this.updateEnablement(false)));
+		this.toDispose.push(this.textFileService.models.onModelsSaveError(e => this.updateEnablement(true)));
 
 		if (this.includeUntitled()) {
 			this.toDispose.push(this.untitledEditorService.onDidChangeDirty(resource => this.updateEnablement(this.untitledEditorService.isDirty(resource))));
@@ -1647,9 +1527,9 @@ export class SaveAllInGroupAction extends BaseSaveAllAction {
 		}
 
 		const editorGroup = editorIdentifier.group;
-		const resourcesToSave = [];
+		const resourcesToSave: URI[] = [];
 		editorGroup.getEditors().forEach(editor => {
-			const resource = getUntitledOrFileResource(editor, true);
+			const resource = toResource(editor, { supportSideBySide: true, filter: ['file', 'untitled'] });
 			if (resource) {
 				resourcesToSave.push(resource);
 			}
@@ -1704,10 +1584,7 @@ export class RevertFileAction extends Action {
 		if (this.resource) {
 			resource = this.resource;
 		} else {
-			const activeFileInput = asFileEditorInput(this.editorService.getActiveEditorInput(), true);
-			if (activeFileInput) {
-				resource = activeFileInput.getResource();
-			}
+			resource = toResource(this.editorService.getActiveEditorInput(), { supportSideBySide: true, filter: 'file' });
 		}
 
 		if (resource && resource.scheme !== 'untitled') {
@@ -1783,15 +1660,15 @@ export class ShowActiveFileInExplorer extends Action {
 	}
 
 	public run(): TPromise<any> {
-		const fileInput = asFileEditorInput(this.editorService.getActiveEditorInput(), true);
-		if (fileInput) {
+		const fileResource = toResource(this.editorService.getActiveEditorInput(), { supportSideBySide: true, filter: 'file' });
+		if (fileResource) {
 			return this.viewletService.openViewlet(VIEWLET_ID, false).then((viewlet: ExplorerViewlet) => {
-				const isInsideWorkspace = this.contextService.isInsideWorkspace(fileInput.getResource());
+				const isInsideWorkspace = this.contextService.isInsideWorkspace(fileResource);
 				if (isInsideWorkspace) {
 					const explorerView = viewlet.getExplorerView();
 					if (explorerView) {
 						explorerView.expand();
-						explorerView.select(fileInput.getResource(), true);
+						explorerView.select(fileResource, true);
 					}
 				} else {
 					const openEditorsView = viewlet.getOpenEditorsView();

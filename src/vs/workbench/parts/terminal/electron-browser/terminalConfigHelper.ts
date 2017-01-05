@@ -119,7 +119,7 @@ export class TerminalConfigHelper implements ITerminalConfigHelper {
 		let editorConfig = this._configurationService.getConfiguration<IConfiguration>();
 
 		let fontFamily = terminalConfig.fontFamily || editorConfig.editor.fontFamily;
-		let fontSize = this.toInteger(terminalConfig.fontSize, 0) || editorConfig.editor.fontSize;
+		let fontSize = this._toInteger(terminalConfig.fontSize, 0);
 		if (fontSize <= 0) {
 			fontSize = DefaultConfig.editor.fontSize;
 		}
@@ -136,6 +136,11 @@ export class TerminalConfigHelper implements ITerminalConfigHelper {
 	public getCursorBlink(): boolean {
 		let terminalConfig = this._configurationService.getConfiguration<ITerminalConfiguration>().terminal.integrated;
 		return terminalConfig.cursorBlinking;
+	}
+
+	public getRightClickCopyPaste(): boolean {
+		let config = this._configurationService.getConfiguration<ITerminalConfiguration>();
+		return config.terminal.integrated.rightClickCopyPaste;
 	}
 
 	public getShell(): IShell {
@@ -161,16 +166,21 @@ export class TerminalConfigHelper implements ITerminalConfigHelper {
 	}
 
 	public getScrollback(): number {
-		let config = this._configurationService.getConfiguration<ITerminalConfiguration>();
+		const config = this._configurationService.getConfiguration<ITerminalConfiguration>();
 		return config.terminal.integrated.scrollback;
 	}
 
 	public isSetLocaleVariables(): boolean {
-		let config = this._configurationService.getConfiguration<ITerminalConfiguration>();
+		const config = this._configurationService.getConfiguration<ITerminalConfiguration>();
 		return config.terminal.integrated.setLocaleVariables;
 	}
 
-	private toInteger(source: any, minimum?: number): number {
+	public getCwd(): string {
+		const config = this._configurationService.getConfiguration<ITerminalConfiguration>();
+		return config.terminal.integrated.cwd;
+	}
+
+	private _toInteger(source: any, minimum?: number): number {
 		let r = parseInt(source, 10);
 		if (isNaN(r)) {
 			r = 0;
