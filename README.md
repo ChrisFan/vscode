@@ -17,6 +17,11 @@ start electron
 ./scripts/code.sh
 ```
 
+debug
+```bash
+./scripts/code.sh --remote-debugging-port=9222
+```
+
 ## monaco
 
 setup monaco
