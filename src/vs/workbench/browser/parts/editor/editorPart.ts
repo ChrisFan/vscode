@@ -115,7 +115,7 @@ export class EditorPart extends Part implements IEditorPart, IEditorGroupService
 		@IContextKeyService contextKeyService: IContextKeyService,
 		@IInstantiationService private instantiationService: IInstantiationService
 	) {
-		super(id);
+		super(id, { hasTitle: false });
 
 		this._onEditorsChanged = new Emitter<void>();
 		this._onEditorsMoved = new Emitter<void>();
@@ -145,7 +145,7 @@ export class EditorPart extends Part implements IEditorPart, IEditorGroupService
 				previewEditors: editorConfig.enablePreview,
 				showIcons: editorConfig.showIcons,
 				showTabs: editorConfig.showTabs,
-				showTabCloseButton: editorConfig.showTabCloseButton
+				tabCloseButton: editorConfig.tabCloseButton
 			};
 
 			this.telemetryService.publicLog('workbenchEditorConfiguration', editorConfig);
@@ -154,7 +154,7 @@ export class EditorPart extends Part implements IEditorPart, IEditorGroupService
 				previewEditors: true,
 				showIcons: false,
 				showTabs: true,
-				showTabCloseButton: true
+				tabCloseButton: 'right'
 			};
 		}
 
@@ -187,7 +187,7 @@ export class EditorPart extends Part implements IEditorPart, IEditorGroupService
 			this.tabOptions = {
 				previewEditors: newPreviewEditors,
 				showIcons: editorConfig.showIcons,
-				showTabCloseButton: editorConfig.showTabCloseButton,
+				tabCloseButton: editorConfig.tabCloseButton,
 				showTabs: editorConfig.showTabs
 			};
 
@@ -907,7 +907,7 @@ export class EditorPart extends Part implements IEditorPart, IEditorGroupService
 		}
 	}
 
-	public replaceEditors(editors: { toReplace: EditorInput, replaceWith: EditorInput, options?: EditorOptions }[]): TPromise<BaseEditor[]> {
+	public replaceEditors(editors: { toReplace: EditorInput, replaceWith: EditorInput, options?: EditorOptions }[], position?: Position): TPromise<BaseEditor[]> {
 		const activeReplacements: IEditorReplacement[] = [];
 		const hiddenReplacements: IEditorReplacement[] = [];
 
@@ -919,19 +919,21 @@ export class EditorPart extends Part implements IEditorPart, IEditorGroupService
 
 			// For each group
 			this.stacks.groups.forEach(group => {
-				const index = group.indexOf(editor.toReplace);
-				if (index >= 0) {
-					if (editor.options) {
-						editor.options.index = index; // make sure we respect the index of the editor to replace!
-					} else {
-						editor.options = EditorOptions.create({ index });
-					}
+				if (position === void 0 || this.stacks.positionOfGroup(group) === position) {
+					const index = group.indexOf(editor.toReplace);
+					if (index >= 0) {
+						if (editor.options) {
+							editor.options.index = index; // make sure we respect the index of the editor to replace!
+						} else {
+							editor.options = EditorOptions.create({ index });
+						}
 
-					const replacement = { group, editor: editor.toReplace, replaceWith: editor.replaceWith, options: editor.options };
-					if (group.activeEditor.matches(editor.toReplace)) {
-						activeReplacements.push(replacement);
-					} else {
-						hiddenReplacements.push(replacement);
+						const replacement = { group, editor: editor.toReplace, replaceWith: editor.replaceWith, options: editor.options };
+						if (group.activeEditor.matches(editor.toReplace)) {
+							activeReplacements.push(replacement);
+						} else {
+							hiddenReplacements.push(replacement);
+						}
 					}
 				}
 			});

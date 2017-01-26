@@ -10,10 +10,9 @@ import errors = require('vs/base/common/errors');
 import { toErrorMessage } from 'vs/base/common/errorMessage';
 import types = require('vs/base/common/types');
 import paths = require('vs/base/common/paths');
-import { IEditorOptions } from 'vs/editor/common/editorCommon';
 import { Action } from 'vs/base/common/actions';
 import { VIEWLET_ID, TEXT_FILE_EDITOR_ID } from 'vs/workbench/parts/files/common/files';
-import { ITextFileEditorModel, ITextFileService } from 'vs/workbench/services/textfile/common/textfiles';
+import { ITextFileEditorModel } from 'vs/workbench/services/textfile/common/textfiles';
 import { BaseTextEditor } from 'vs/workbench/browser/parts/editor/textEditor';
 import { EditorOptions, TextEditorOptions } from 'vs/workbench/common/editor';
 import { BinaryEditorModel } from 'vs/workbench/common/editor/binaryEditorModel';
@@ -31,6 +30,7 @@ import { CancelAction } from 'vs/platform/message/common/message';
 import { IWorkbenchEditorService } from 'vs/workbench/services/editor/common/editorService';
 import { IThemeService } from 'vs/workbench/services/themes/common/themeService';
 import { IEditorGroupService } from 'vs/workbench/services/group/common/groupService';
+import { IModeService } from 'vs/editor/common/services/modeService';
 
 /**
  * An implementation of editor for file system resources.
@@ -51,9 +51,9 @@ export class TextFileEditor extends BaseTextEditor {
 		@IWorkbenchEditorService private editorService: IWorkbenchEditorService,
 		@IThemeService themeService: IThemeService,
 		@IEditorGroupService private editorGroupService: IEditorGroupService,
-		@ITextFileService textFileService: ITextFileService
+		@IModeService modeService: IModeService
 	) {
-		super(TextFileEditor.ID, telemetryService, instantiationService, storageService, configurationService, themeService, textFileService);
+		super(TextFileEditor.ID, telemetryService, instantiationService, storageService, configurationService, themeService, modeService);
 
 		// Clear view state for deleted files
 		this.toUnbind.push(this.fileService.onFileChanges(e => this.onFilesChanged(e)));
@@ -206,9 +206,7 @@ export class TextFileEditor extends BaseTextEditor {
 		return true; // in any case we handled it
 	}
 
-	protected getCodeEditorOptions(): IEditorOptions {
-		const options = super.getCodeEditorOptions();
-
+	protected getAriaLabel(): string {
 		const input = this.input;
 		const inputName = input && input.getName();
 
@@ -219,17 +217,7 @@ export class TextFileEditor extends BaseTextEditor {
 			ariaLabel = nls.localize('fileEditorAriaLabel', "Text file editor.");
 		}
 
-		const model = this.editorGroupService.getStacksModel();
-		if (model.groups.length > 1) {
-			const group = model.groupAt(this.position);
-			if (group) {
-				ariaLabel = nls.localize('editorLabelWithGroup', "{0} Group {1}.", ariaLabel, group.label);
-			}
-		}
-
-		options.ariaLabel = ariaLabel;
-
-		return options;
+		return ariaLabel;
 	}
 
 	public clearInput(): void {

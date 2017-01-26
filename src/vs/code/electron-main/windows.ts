@@ -17,7 +17,7 @@ import { IBackupMainService } from 'vs/platform/backup/common/backup';
 import { trim } from 'vs/base/common/strings';
 import { IEnvironmentService, ParsedArgs } from 'vs/platform/environment/common/environment';
 import { IStorageService } from 'vs/code/electron-main/storage';
-import { IPath, VSCodeWindow, IWindowConfiguration, IWindowState as ISingleWindowState, defaultWindowState, ReadyState } from 'vs/code/electron-main/window';
+import { IPath, VSCodeWindow, IWindowConfiguration, IWindowState as ISingleWindowState, defaultWindowState, ReadyState, WindowMode } from 'vs/code/electron-main/window';
 import { ipcMain as ipc, app, screen, BrowserWindow, dialog } from 'electron';
 import { IPathWithLineAndColumn, parseLineAndColumnAware } from 'vs/code/electron-main/paths';
 import { ILifecycleService, UnloadReason } from 'vs/code/electron-main/lifecycle';
@@ -104,6 +104,7 @@ export interface IWindowsMainService {
 	// events
 	onWindowReady: CommonEvent<VSCodeWindow>;
 	onWindowClose: CommonEvent<number>;
+	onWindowReload: CommonEvent<number>;
 	onPathsOpen: CommonEvent<IPath[]>;
 	onRecentPathsChange: CommonEvent<void>;
 
@@ -131,7 +132,6 @@ export interface IWindowsMainService {
 	removeFromRecentPathsList(path: string): void;
 	removeFromRecentPathsList(paths: string[]): void;
 	clearRecentPathsList(): void;
-	toggleMenuBar(windowId: number): void;
 	quit(): void;
 }
 
@@ -158,6 +158,9 @@ export class WindowsManager implements IWindowsMainService {
 
 	private _onWindowClose = new Emitter<number>();
 	onWindowClose: CommonEvent<number> = this._onWindowClose.event;
+
+	private _onWindowReload = new Emitter<number>();
+	onWindowReload: CommonEvent<number> = this._onWindowReload.event;
 
 	private _onPathsOpen = new Emitter<IPath[]>();
 	onPathsOpen: CommonEvent<IPath> = this._onPathsOpen.event;
@@ -292,6 +295,9 @@ export class WindowsManager implements IWindowsMainService {
 		this.lifecycleService.unload(win, UnloadReason.RELOAD).done(veto => {
 			if (!veto) {
 				win.reload(cli);
+
+				// Emit
+				this._onWindowReload.fire(win.id);
 			}
 		});
 	}
@@ -761,7 +767,7 @@ export class WindowsManager implements IWindowsMainService {
 				state: this.getNewWindowState(configuration),
 				extensionDevelopmentPath: configuration.extensionDevelopmentPath,
 				isExtensionTestHost: !!configuration.extensionTestsPath,
-				allowFullscreen: this.lifecycleService.wasUpdated || (windowConfig && windowConfig.restoreFullscreen),
+				allowFullscreen: this.lifecycleService.wasUpdated || (windowConfig && windowConfig.restoreFullscreen) || (windowConfig && windowConfig.newWindowDimensions && ['fullscreen', 'inherit'].indexOf(windowConfig.newWindowDimensions) >= 0),
 				titleBarStyle: windowConfig ? windowConfig.titleBarStyle : void 0
 			},
 				this.logService,
@@ -870,11 +876,37 @@ export class WindowsManager implements IWindowsMainService {
 			}
 		}
 
-		const defaultState = defaultWindowState();
-		defaultState.x = displayToUse.bounds.x + (displayToUse.bounds.width / 2) - (defaultState.width / 2);
-		defaultState.y = displayToUse.bounds.y + (displayToUse.bounds.height / 2) - (defaultState.height / 2);
+		let state = defaultWindowState();
+		state.x = displayToUse.bounds.x + (displayToUse.bounds.width / 2) - (state.width / 2);
+		state.y = displayToUse.bounds.y + (displayToUse.bounds.height / 2) - (state.height / 2);
 
-		return this.ensureNoOverlap(defaultState);
+		// Check for newWindowDimensions setting and adjust accordingly
+		const windowConfig = this.configurationService.getConfiguration<IWindowSettings>('window');
+		let ensureNoOverlap = true;
+		if (windowConfig && windowConfig.newWindowDimensions) {
+			if (windowConfig.newWindowDimensions === 'maximized') {
+				state.mode = WindowMode.Maximized;
+				ensureNoOverlap = false;
+			} else if (windowConfig.newWindowDimensions === 'fullscreen') {
+				state.mode = WindowMode.Fullscreen;
+				ensureNoOverlap = false;
+			} else if (windowConfig.newWindowDimensions === 'inherit' && lastActive) {
+				const lastActiveState = lastActive.serializeWindowState();
+				if (lastActiveState.mode === WindowMode.Fullscreen) {
+					state.mode = WindowMode.Fullscreen; // only take mode (fixes https://github.com/Microsoft/vscode/issues/19331)
+				} else {
+					state = lastActiveState;
+				}
+
+				ensureNoOverlap = false;
+			}
+		}
+
+		if (ensureNoOverlap) {
+			state = this.ensureNoOverlap(state);
+		}
+
+		return state;
 	}
 
 	private ensureNoOverlap(state: ISingleWindowState): ISingleWindowState {
@@ -1174,24 +1206,6 @@ export class WindowsManager implements IWindowsMainService {
 		}
 
 		return pathA === pathB;
-	}
-
-	public toggleMenuBar(windowId: number): void {
-		// Update in settings
-		const menuBarHidden = this.storageService.getItem(VSCodeWindow.menuBarHiddenKey, false);
-		const newMenuBarHidden = !menuBarHidden;
-		this.storageService.setItem(VSCodeWindow.menuBarHiddenKey, newMenuBarHidden);
-
-		// Update across windows
-		WindowsManager.WINDOWS.forEach(w => w.setMenuBarVisibility(!newMenuBarHidden));
-
-		// Inform user if menu bar is now hidden
-		if (newMenuBarHidden) {
-			const vscodeWindow = this.getWindowById(windowId);
-			if (vscodeWindow) {
-				vscodeWindow.send('vscode:showInfoMessage', nls.localize('hiddenMenuBar', "You can still access the menu bar by pressing the **Alt** key."));
-			}
-		}
 	}
 
 	private updateWindowsJumpList(): void {

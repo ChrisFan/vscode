@@ -31,9 +31,9 @@ import { getOutOfWorkspaceEditorResources } from 'vs/workbench/common/editor';
 import { FileChangeType, FileChangesEvent, IFileService } from 'vs/platform/files/common/files';
 import { Viewlet } from 'vs/workbench/browser/viewlet';
 import { Match, FileMatch, SearchModel, FileMatchOrMatch, IChangeEvent, ISearchWorkbenchService } from 'vs/workbench/parts/search/common/searchModel';
-import { getExcludes, QueryBuilder } from 'vs/workbench/parts/search/common/searchQuery';
+import { QueryBuilder } from 'vs/workbench/parts/search/common/searchQuery';
 import { MessageType, InputBox } from 'vs/base/browser/ui/inputbox/inputBox';
-import { ISearchProgressItem, ISearchComplete, ISearchQuery, IQueryOptions, ISearchConfiguration } from 'vs/platform/search/common/search';
+import { getExcludes, ISearchProgressItem, ISearchComplete, ISearchQuery, IQueryOptions, ISearchConfiguration } from 'vs/platform/search/common/search';
 import { IWorkbenchEditorService } from 'vs/workbench/services/editor/common/editorService';
 import { IStorageService, StorageScope } from 'vs/platform/storage/common/storage';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
@@ -410,7 +410,7 @@ export class SearchViewlet extends Viewlet {
 				}
 
 				let sideBySide = (originalEvent && (originalEvent.ctrlKey || originalEvent.metaKey));
-				let focusEditor = (keyboard && (<KeyboardEvent>originalEvent).keyCode === KeyCode.Enter) || doubleClick || event.payload.focusEditor;
+				let focusEditor = (keyboard && (<KeyboardEvent>originalEvent).keyCode === KeyCode.Enter) || doubleClick || (event.payload && event.payload.focusEditor);
 
 				if (element instanceof Match) {
 					let selectedMatch: Match = element;
@@ -470,6 +470,7 @@ export class SearchViewlet extends Viewlet {
 		}
 
 		// Reveal the newly selected element
+		this.tree.setFocus(next, eventPayload);
 		this.tree.setSelection([next], eventPayload);
 		this.tree.reveal(next);
 	}
@@ -497,7 +498,11 @@ export class SearchViewlet extends Viewlet {
 		}
 
 		// Reveal the newly selected element
-		this.tree.setSelection([prev], eventPayload);
+		if (prev) {
+			this.tree.setFocus(prev, eventPayload);
+			this.tree.setSelection([prev], eventPayload);
+			this.tree.reveal(prev);
+		}
 	}
 
 	public setVisible(visible: boolean): TPromise<void> {
@@ -825,8 +830,8 @@ export class SearchViewlet extends Viewlet {
 	private onQueryTriggered(query: ISearchQuery, excludePattern: string, includePattern: string): void {
 		this.viewModel.cancelSearch();
 
-		// Progress total is 100%
-		let progressTotal = 100;
+		// Progress total is 100.0% for more progress bar granularity
+		let progressTotal = 1000;
 		let progressRunner = this.progressService.show(progressTotal);
 		let progressWorked = 0;
 
@@ -986,7 +991,7 @@ export class SearchViewlet extends Viewlet {
 			// Progress bar update
 			let fakeProgress = true;
 			if (total > 0 && worked > 0) {
-				let ratio = Math.round((worked / total) * 100);
+				let ratio = Math.round((worked / total) * progressTotal);
 				if (ratio > progressWorked) { // never show less progress than what we have already
 					progressRunner.worked(ratio - progressWorked);
 					progressWorked = ratio;
@@ -994,11 +999,17 @@ export class SearchViewlet extends Viewlet {
 				}
 			}
 
-			// Fake progress up to 90%
-			if (fakeProgress && progressWorked < 90) {
-				progressWorked++;
-				progressRunner.worked(1);
+			// Fake progress up to 90%, or when actual progress beats it
+			const fakeMax = 900;
+			const fakeMultiplier = 12;
+			if (fakeProgress && progressWorked < fakeMax) {
+				// Linearly decrease the rate of fake progress.
+				// 1 is the smallest allowed amount of progress.
+				const fakeAmt = Math.round((fakeMax - progressWorked) / fakeMax * fakeMultiplier) || 1;
+				progressWorked += fakeAmt;
+				progressRunner.worked(fakeAmt);
 			}
+
 			// Search result tree update
 			let count = this.viewModel.searchResult.fileCount();
 			if (visibleMatches !== count) {
@@ -1013,7 +1024,7 @@ export class SearchViewlet extends Viewlet {
 					this.actionRegistry['vs.tree.collapse'].enabled = true;
 				}
 			}
-		}, 200);
+		}, 100);
 
 		this.searchWidget.setReplaceAllActionState(false);
 		// this.replaceService.disposeAllReplacePreviews();

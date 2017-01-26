@@ -102,7 +102,7 @@ export class LaunchService implements ILaunchService {
 				context,
 				cli: args,
 				userEnv,
-				forceNewWindow: args.wait || args['new-window'],
+				forceNewWindow: args.wait || args['new-window'] || args['new-window-if-not-first'],
 				preferNewWindow: !args['reuse-window'],
 				forceReuseWindow: args['reuse-window'],
 				diffMode: args.diff

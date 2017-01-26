@@ -372,7 +372,7 @@ class Renderer extends LegacyRenderer {
 					badge.setTitleFormat(nls.localize('referenceCount', "{0} reference", len));
 				}
 
-				return badge;
+				return null;
 			});
 			/* tslint:enable:no-unused-expression */
 
@@ -381,6 +381,10 @@ class Renderer extends LegacyRenderer {
 		} else if (element instanceof OneReference) {
 
 			const preview = element.parent.preview.preview(element.range);
+
+			if (!preview) {
+				return;
+			}
 
 			$('.reference').innerHtml(
 				strings.format(

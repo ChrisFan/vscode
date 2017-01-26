@@ -156,7 +156,7 @@ export class DebugActionsWidget implements IWorkbenchContribution {
 
 	private update(): void {
 		const state = this.debugService.state;
-		if (state === debug.State.Disabled || state === debug.State.Inactive) {
+		if (state === debug.State.Inactive) {
 			return this.hide();
 		}
 
@@ -209,7 +209,7 @@ export class DebugActionsWidget implements IWorkbenchContribution {
 
 		const state = this.debugService.state;
 		const process = this.debugService.getViewModel().focusedProcess;
-		const attached = process && !strings.equalsIgnoreCase(process.session.configuration.type, 'extensionHost') && process.session.requestType === debug.SessionRequestType.ATTACH;
+		const attached = process && !strings.equalsIgnoreCase(process.session.configuration.type, 'extensionHost') && process.isAttach();
 
 		return this.allActions.filter(a => {
 			if (a.id === ContinueAction.ID) {
